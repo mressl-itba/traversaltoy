@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recorridos — árboles y grafos</title>
+<style>
+  :root{
+    --bg:#0E151C;
+    --panel:#16202B;
+    --panel-2:#1B2734;
+    --line:rgba(255,255,255,.09);
+    --ink:#E6EDF3;
+    --muted:#7C8FA3;
+    --ch1:#F2C230;   /* canal 1 — visitados   */
+    --ch2:#3FD0D8;   /* canal 2 — frontera    */
+    --alert:#FF6B6B;
+    --ok:#7CE38B;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #1B2836 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.5;
+    min-height:100vh;
+    padding:24px 16px 64px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* ---------- encabezado ---------- */
+  header{
+    display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:22px;
+  }
+  h1{
+    font-size:20px;font-weight:700;margin:0;
+    text-transform:uppercase;letter-spacing:.16em;
+  }
+  header p{margin:0;color:var(--muted);font-size:14px;letter-spacing:.01em}
+
+  .label{
+    font-size:11px;text-transform:uppercase;letter-spacing:.18em;
+    color:var(--muted);font-weight:700;
+  }
+
+  /* ---------- panel ---------- */
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:18px;
+    margin-bottom:16px;
+  }
+  .cols{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
+  @media (max-width:900px){ .cols{grid-template-columns:1fr} }
+
+  /* ---------- tablero (svg) ---------- */
+  .board{display:block;width:100%;height:auto;max-height:470px;margin:0 auto 18px}
+  .board .edge{stroke:rgba(255,255,255,.16);stroke-width:2;transition:stroke .2s ease}
+  .board .edge.tree{stroke:var(--ch1);stroke-opacity:.6;stroke-width:2.5}
+  .board .edge.tent{stroke:var(--ch2);stroke-opacity:.85;stroke-dasharray:6 5;stroke-width:2.5}
+  .board .edge.path{stroke:var(--ink);stroke-width:5}
+  .board .wbg{fill:var(--panel)}
+  .board .w{
+    font-family:var(--mono);font-size:12px;fill:var(--muted);
+    text-anchor:middle;dominant-baseline:central;font-variant-numeric:tabular-nums;
+  }
+  .board .w.dim{opacity:.4}
+
+  .node{cursor:pointer;transform-box:fill-box;transform-origin:center}
+  .node .base{fill:var(--panel)}
+  .node .dot{fill:var(--panel-2);stroke:var(--muted);stroke-width:1.5;transition:stroke .15s ease}
+  .node .ring{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+  .node .nm{
+    font-family:var(--mono);font-size:15px;fill:var(--muted);
+    text-anchor:middle;dominant-baseline:central;pointer-events:none;
+  }
+  .node .gl{
+    font-family:var(--mono);font-size:11px;fill:var(--muted);opacity:.7;
+    text-anchor:middle;dominant-baseline:central;pointer-events:none;
+    paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round;
+  }
+  .node:hover .dot{stroke:var(--ink)}
+  .node.fr .dot{stroke:var(--ch2);fill:rgba(63,208,216,.1)}
+  .node.fr .nm,.node.fr .gl{fill:var(--ch2);opacity:1}
+  .node.done .dot{stroke:var(--ch1);fill:rgba(242,194,48,.1)}
+  .node.done .nm,.node.done .gl{fill:var(--ch1);opacity:1}
+  .node.last .dot{stroke-width:3;fill:rgba(242,194,48,.22)}
+  .node.off{cursor:default}
+  .node.bad .dot{stroke:var(--alert)!important;stroke-width:3}
+  .node.shake{animation:shake .34s}
+
+  /* ---------- filas de tarjetas ---------- */
+  .row{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  .row:last-child{margin-bottom:0}
+  .rowhead{width:96px;flex:none}
+  .rowhead .name{font-size:13px;font-weight:700;letter-spacing:.04em}
+  .rowhead .chan{font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+  .rfr .chan{color:var(--ch2)} .rvis .chan{color:var(--ch1)}
+  .cards{display:flex;gap:8px;flex-wrap:wrap;min-height:76px;align-items:flex-start;row-gap:28px}
+
+  .card{
+    position:relative;
+    width:56px;height:60px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:21px;font-variant-numeric:tabular-nums;line-height:1.1;
+    border-radius:3px;
+    border:1px solid;
+    background:var(--panel-2);
+    transition:transform .16s ease, opacity .2s ease, box-shadow .16s ease;
+    user-select:none;
+  }
+  .card .sub{font-size:10px;letter-spacing:.02em;margin-top:4px;opacity:.85;white-space:nowrap}
+  .card.l{border-color:rgba(242,194,48,.38);color:var(--ch1);background:rgba(242,194,48,.07)}
+  .card.r{border-color:rgba(63,208,216,.38);color:var(--ch2);background:rgba(63,208,216,.07)}
+  .card.pick{cursor:pointer}
+  .card.pick:hover{transform:translateY(-4px);box-shadow:0 0 0 1px var(--ch2), 0 6px 18px rgba(63,208,216,.18)}
+  .card.pick:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .card.empty{
+    border:1px dashed var(--line);background:transparent;color:var(--muted);
+    width:auto;padding:0 12px;font-family:var(--sans);font-size:11px;
+    letter-spacing:.14em;text-transform:uppercase;
+  }
+  .card.shake{animation:shake .34s}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    20%{transform:translateX(-7px)} 40%{transform:translateX(6px)}
+    60%{transform:translateX(-4px)} 80%{transform:translateX(3px)}
+  }
+  .card.bad{border-color:var(--alert)!important;box-shadow:0 0 0 1px var(--alert)!important}
+
+  /* puntero */
+  .ptr{
+    position:absolute;left:50%;transform:translateX(-50%);
+    bottom:-20px;font-family:var(--mono);font-size:12px;letter-spacing:.05em;
+    white-space:nowrap;color:var(--ch2);
+  }
+  .ptr::before{
+    content:"";position:absolute;left:50%;top:-8px;transform:translateX(-50%);
+    border:5px solid transparent;border-bottom-color:currentColor;
+  }
+
+  .sep{border-top:1px solid var(--line);margin-top:6px;padding-top:18px}
+
+  /* ---------- mensaje ---------- */
+  .msg{
+    min-height:46px;display:flex;align-items:center;gap:10px;
+    font-size:14px;padding:10px 12px;border-radius:3px;
+    background:var(--panel-2);border-left:3px solid var(--muted);
+    margin-top:16px;
+  }
+  .msg.err{border-left-color:var(--alert)}
+  .msg.warn{border-left-color:var(--ch1)}
+  .msg.good{border-left-color:var(--ok)}
+  .msg code{font-family:var(--mono);color:var(--ink)}
+
+  /* ---------- pseudocódigo ---------- */
+  pre.code{
+    font-family:var(--mono);font-size:13px;line-height:1.75;
+    margin:0;white-space:pre;overflow-x:auto;color:var(--muted);
+  }
+  pre.code .ln{display:block;padding:1px 8px;border-left:2px solid transparent;border-radius:2px}
+  pre.code .ln.on{background:rgba(255,255,255,.06);border-left-color:var(--ink);color:var(--ink)}
+
+  /* ---------- contadores ---------- */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+         border:1px solid var(--line);border-radius:3px;overflow:hidden;margin-top:16px}
+  .stat{background:var(--panel);padding:10px 12px}
+  .stat .n{font-family:var(--mono);font-size:24px;font-variant-numeric:tabular-nums}
+  .stat .k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .stat.err .n{color:var(--alert)}
+
+  /* ---------- comparación ---------- */
+  table.comp{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  table.comp th{
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;text-align:right;padding:6px 6px;border-bottom:1px solid var(--line);
+  }
+  table.comp th:first-child,table.comp td:first-child{text-align:left}
+  table.comp td{
+    font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
+    padding:6px 6px;border-bottom:1px solid var(--line);
+  }
+  table.comp td.best{color:var(--ok)}
+  table.comp tr.cur td:first-child{color:var(--ch1)}
+
+  /* ---------- controles ---------- */
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{
+    font-family:var(--sans);font-size:12px;font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;
+    background:var(--panel-2);color:var(--ink);
+    border:1px solid var(--line);border-radius:3px;
+    padding:9px 14px;cursor:pointer;
+    transition:background .15s ease,border-color .15s ease;
+  }
+  button:hover{background:#243342;border-color:rgba(255,255,255,.2)}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.primary{background:transparent;border-color:var(--ink)}
+  select,input[type=range]{
+    font-family:var(--sans);font-size:13px;
+    background:var(--panel-2);color:var(--ink);
+    border:1px solid var(--line);border-radius:3px;padding:7px 8px;
+  }
+  input[type=range]{padding:0;width:110px;accent-color:var(--ink)}
+  .field{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%}
+  select{max-width:100%;min-width:0}
+  .field .val{font-family:var(--mono);font-size:13px;width:18px;text-align:right}
+
+  .hint{margin-top:14px;font-size:12px;color:var(--muted);letter-spacing:.02em}
+  kbd{
+    font-family:var(--mono);font-size:11px;background:var(--panel-2);
+    border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;
+    padding:1px 5px;color:var(--ink);
+  }
+
+  /* clon en vuelo */
+  .flying{position:fixed;z-index:99;pointer-events:none;margin:0}
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Recorridos</h1>
+    <p>Árboles y grafos. En cada paso elegís vos qué nodo sigue; la estructura de datos decide si tenías razón.</p>
+  </header>
+
+  <!-- ====== controles ====== -->
+  <div class="panel controls">
+    <div class="field">
+      <span class="label">Recorrido</span>
+      <select id="algo">
+        <optgroup label="Árbol binario">
+          <option value="pre">DFS preorden (pila)</option>
+          <option value="in">DFS inorden (pila)</option>
+          <option value="post">DFS postorden (pila)</option>
+          <option value="niv">BFS por niveles (cola)</option>
+        </optgroup>
+        <optgroup label="Grafo">
+          <option value="bfs" selected>BFS (cola)</option>
+          <option value="dfs">DFS (pila)</option>
+          <option value="dij">Dijkstra (cola de prioridad)</option>
+          <option value="ast">A* (cola de prioridad, por heurística)</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="field">
+      <span class="label">Caso</span>
+      <select id="caso"></select>
+    </div>
+    <div class="field" id="hastaF">
+      <span class="label">Hasta</span>
+      <select id="hasta">
+        <option value="todo">Recorrer todo</option>
+        <option value="meta">Encontrar T</option>
+      </select>
+    </div>
+    <div class="field">
+      <span class="label" id="tamL">n</span>
+      <input type="range" id="tam">
+      <span class="val" id="tamV"></span>
+    </div>
+    <button id="nuevo" class="primary">Nuevo caso</button>
+    <button id="reini">Reiniciar</button>
+    <button id="paso">Un paso por mí</button>
+    <button id="auto">Ejecutar</button>
+    <button id="link">Copiar enlace</button>
+  </div>
+
+  <div class="cols">
+
+    <!-- ====== tablero ====== -->
+    <div class="panel">
+      <svg class="board" id="board" aria-label="Tablero"></svg>
+
+      <div class="sep">
+        <div class="row rfr">
+          <div class="rowhead">
+            <div class="name">Frontera</div>
+            <div class="chan" id="frChan">Cola</div>
+          </div>
+          <div class="cards" id="rowFr"></div>
+        </div>
+
+        <div class="row rvis">
+          <div class="rowhead">
+            <div class="name" id="visName">Extraídos</div>
+            <div class="chan">Orden</div>
+          </div>
+          <div class="cards" id="rowVis"></div>
+        </div>
+      </div>
+
+      <div class="msg" id="msg"></div>
+
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <!-- ====== pseudocódigo + contadores ====== -->
+    <div>
+      <div class="panel">
+        <div class="label" style="margin-bottom:12px">Qué está haciendo el algoritmo</div>
+        <pre class="code" id="code"></pre>
+
+        <div class="stats">
+          <div class="stat"><div class="n" id="s1">0</div><div class="k" id="k1"></div></div>
+          <div class="stat"><div class="n" id="s2">0</div><div class="k" id="k2"></div></div>
+          <div class="stat err"><div class="n" id="s3">0</div><div class="k">Errores</div></div>
+        </div>
+
+        <div class="hint" id="cota"></div>
+      </div>
+
+      <div class="panel" id="compPanel">
+        <div class="label">Comparación en este caso</div>
+        <div id="comp"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const elBoard = $("board"), elFr = $("rowFr"), elVis = $("rowVis");
+  const elMsg = $("msg"), elCode = $("code");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- azar reproducible: el mismo número de semilla da el mismo caso ---------- */
+  let semilla = 0, estadoAzar = 0;
+  function azar(){   // mulberry32
+    estadoAzar = (estadoAzar + 0x6D2B79F5) | 0;
+    let t = estadoAzar;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  const rnd = (a,b) => a + Math.floor(azar()*(b-a+1));
+  const pick = arr => arr[rnd(0, arr.length-1)];
+  function barajar(a){
+    for(let k=a.length-1;k>0;k--){ const r = rnd(0,k); [a[k],a[r]] = [a[r],a[k]]; }
+    return a;
+  }
+
+  /* ---------- catálogo ---------- */
+  const ALG = {
+    pre:  {tipo:"arbol", nombre:"DFS preorden",    fr:"Pila"},
+    in:   {tipo:"arbol", nombre:"DFS inorden",     fr:"Pila"},
+    post: {tipo:"arbol", nombre:"DFS postorden",   fr:"Pila"},
+    niv:  {tipo:"arbol", nombre:"BFS por niveles", fr:"Cola"},
+    bfs:  {tipo:"grafo", nombre:"BFS",         fr:"Cola"},
+    dfs:  {tipo:"grafo", nombre:"DFS",         fr:"Pila"},
+    dij:  {tipo:"grafo", nombre:"Dijkstra",    fr:"Cola de prioridad"},
+    ast:  {tipo:"grafo", nombre:"A*",          fr:"Cola de prioridad"},
+  };
+
+  const CASOS = {
+    arbol: [["random","BST aleatorio"],["completo","Completo"],["degenerado","Degenerado (lista)"]],
+    grafo: [["random","Grilla aleatoria"],["atajo","Atajo caro"],["pared","Con pared"]],
+  };
+
+  const TAM = {
+    arbol: {label:"n",        min:5, max:15, val:9},
+    grafo: {label:"Columnas", min:4, max:6,  val:5},
+  };
+
+  const CODIGO = {
+    pre:  ["recorrer(n):",
+           "    si n es nulo: volver",
+           "    visitar(n)",
+           "    recorrer(n.izq)",
+           "    recorrer(n.der)"],
+    in:   ["recorrer(n):",
+           "    si n es nulo: volver",
+           "    recorrer(n.izq)",
+           "    visitar(n)",
+           "    recorrer(n.der)"],
+    post: ["recorrer(n):",
+           "    si n es nulo: volver",
+           "    recorrer(n.izq)",
+           "    recorrer(n.der)",
+           "    visitar(n)"],
+    niv:  ["cola ← [raíz]",
+           "mientras cola no vacía:",
+           "    n ← desencolar(cola)",
+           "    visitar(n)",
+           "    si n.izq: encolar(n.izq)",
+           "    si n.der: encolar(n.der)"],
+    bfs:  ["cola ← [S];  marcar S",
+           "mientras cola no vacía:",
+           "    u ← desencolar(cola)",
+           "    si u = T: terminar",
+           "    para cada vecino v de u:",
+           "        si v no está marcado:",
+           "            marcar v",
+           "            padre[v] ← u",
+           "            encolar(cola, v)"],
+    dfs:  ["pila ← [S]",
+           "mientras pila no vacía:",
+           "    u ← desapilar(pila)",
+           "    marcar u",
+           "    si u = T: terminar",
+           "    para cada vecino v de u:",
+           "        si v no está marcado:",
+           "            padre[v] ← u",
+           "            apilar(pila, v)"],
+    dij:  ["g[S] ← 0;  cp ← {S}",
+           "mientras cp no vacía:",
+           "    u ← extraer mín. g de cp",
+           "    si u = T: terminar",
+           "    para cada vecino v de u:",
+           "        si g[u] + w(u,v) < g[v]:",
+           "            g[v] ← g[u] + w(u,v)",
+           "            padre[v] ← u",
+           "            poner v en cp"],
+    ast:  ["g[S] ← 0;  cp ← {S}",
+           "mientras cp no vacía:",
+           "    u ← extraer mín. g+h de cp",
+           "    si u = T: terminar",
+           "    para cada vecino v de u:",
+           "        si g[u] + w(u,v) < g[v]:",
+           "            g[v] ← g[u] + w(u,v)",
+           "            padre[v] ← u",
+           "            poner v en cp"],
+  };
+  const LINEA_VISITA = {pre:[3], in:[4], post:[5], niv:[3,4]};
+
+  // en grafos las líneas se resaltan por rótulo, porque la de "si u = T"
+  // solo aparece cuando hay destino y corre la numeración
+  const RB = ["ini","loop","ext","meta","","if","","","ins"];
+  const ROTULOS = {bfs:RB, dij:RB, ast:RB,
+                   dfs:["ini","loop","ext","ext","meta","","if","","ins"]};
+
+  const tamGuardado = {arbol:TAM.arbol.val, grafo:TAM.grafo.val};
+
+  let tipo = "grafo", algo = "bfs";
+  let buscarT = false; // BFS, DFS y Dijkstra: ¿cortan al extraer T?
+  const destino = () => algo === "ast" || buscarT;
+  let E = null;        // estructura: árbol o grafo
+  let st = null;       // estado del recorrido
+  let comp = {};       // resultados por modo y algoritmo sobre el caso actual
+  let err = 0, lines = [], playing = null, busy = false;
+
+  /* =====================================================================
+     generación de casos
+     ===================================================================== */
+
+  // valores: claves en orden de inserción, si vienen de la URL
+  function genArbol(valores){
+    const modo = $("caso").value;
+    const n = valores ? valores.length : +$("tam").value;
+    const vals = [];
+    while(!valores && vals.length < n){ const v = rnd(1,99); if(!vals.includes(v)) vals.push(v); }
+
+    let orden;
+    if(valores){
+      orden = valores;
+    } else if(modo === "completo"){
+      const s = vals.slice().sort((a,b)=>a-b);
+      const q = [[0, s.length-1]];
+      orden = [];
+      while(q.length){
+        const [lo,hi] = q.shift();
+        if(lo > hi) continue;
+        const m = (lo + hi) >> 1;
+        orden.push(s[m]);
+        q.push([lo,m-1],[m+1,hi]);
+      }
+    } else if(modo === "degenerado"){
+      orden = vals.slice().sort((a,b)=>a-b);
+      if(azar() < .5) orden.reverse();
+    } else {
+      orden = vals;
+    }
+
+    const nodos = [];
+    let raiz = -1;
+    orden.forEach(v=>{
+      const nd = {id:nodos.length, v, name:String(v), izq:-1, der:-1, padre:-1, prof:0};
+      nodos.push(nd);
+      if(raiz < 0){ raiz = nd.id; return; }
+      let c = raiz;
+      for(;;){
+        const p = nodos[c], lado = v < p.v ? "izq" : "der";
+        if(p[lado] < 0){ p[lado] = nd.id; nd.padre = c; nd.prof = p.prof + 1; break; }
+        c = p[lado];
+      }
+    });
+
+    // x por posición inorden, y por profundidad
+    let k = 0;
+    (function io(id){ if(id<0) return; io(nodos[id].izq); nodos[id].col = k++; io(nodos[id].der); })(raiz);
+    const alto = Math.max(...nodos.map(d=>d.prof));
+    const porNivel = Array(alto+1).fill(0);
+    nodos.forEach(d=>porNivel[d.prof]++);
+    const dx = 56, dy = 64, m = 36;
+    nodos.forEach(d=>{ d.px = m + d.col*dx; d.py = m + d.prof*dy; });
+
+    E = {kind:"arbol", nodos, raiz, alto, ancho:Math.max(...porNivel), valores:orden,
+         W: 2*m + (n-1)*dx, H: 2*m + alto*dy};
+  }
+
+  const LETRAS = "ABCDEFGHIJKLMNOPQRUVWXYZ";   // sin S ni T
+
+  function genGrafo(){
+    const C = +$("tam").value, R = 4, modo = $("caso").value;
+    const sr = modo === "random" ? rnd(0,R-1) : rnd(1,2);
+    const tr = modo === "random" ? rnd(0,R-1) : sr;
+    const id = (c,r) => r*C + c;
+
+    const nodos = [];
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++){
+      nodos.push({id:id(c,r), c, r,
+                  x: c + (azar()-.5)*.34,
+                  y: r + (azar()-.5)*.34});
+    }
+    const S = id(0,sr), T = id(C-1,tr);
+
+    // aristas candidatas: grilla + alguna diagonal
+    let cand = [];
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++){
+      if(c+1<C) cand.push([id(c,r), id(c+1,r)]);
+      if(r+1<R) cand.push([id(c,r), id(c,r+1)]);
+      if(c+1<C && r+1<R && azar()<.3){
+        cand.push(azar()<.5 ? [id(c,r), id(c+1,r+1)] : [id(c+1,r), id(c,r+1)]);
+      }
+    }
+
+    // pared: corta todo el paso entre dos columnas, salvo por la fila de abajo
+    if(modo === "pared"){
+      const cw = C >> 1;
+      cand = cand.filter(([a,b])=>{
+        const A = nodos[a], B = nodos[b];
+        const cruza = Math.min(A.c,B.c) === cw-1 && Math.max(A.c,B.c) === cw;
+        return !cruza || (A.r === R-1 && B.r === R-1);
+      });
+    }
+
+    // árbol generador aleatorio (garantiza conexidad) + aristas extra
+    const uf = nodos.map((_,k)=>k);
+    const raizUF = k => uf[k] === k ? k : (uf[k] = raizUF(uf[k]));
+    const esAtajo = ([a,b]) => nodos[a].r === sr && nodos[b].r === sr;
+    const aristas = [];
+    barajar(cand).forEach(e=>{
+      const ra = raizUF(e[0]), rb = raizUF(e[1]);
+      const arbol = ra !== rb;
+      if(arbol) uf[ra] = rb;
+      if(arbol || azar() < .5 || (modo === "atajo" && esAtajo(e))) aristas.push(e);
+    });
+
+    // peso ≥ 2 × largo, para que la heurística sea admisible
+    const w = new Map();
+    const pesos = aristas.map(([a,b])=>{
+      const len = Math.hypot(nodos[a].x-nodos[b].x, nodos[a].y-nodos[b].y);
+      let p = Math.ceil(2*len) + pick([0,0,1,1,2,3]);
+      if(modo === "atajo" && esAtajo([a,b])) p += 4;
+      w.set(a+","+b, p); w.set(b+","+a, p);
+      return {a, b, w:p};
+    });
+
+    // nombres: S y T fijos, el resto por letra en orden de lectura
+    let li = 0;
+    nodos.forEach(n=>{ n.name = n.id === S ? "S" : n.id === T ? "T" : LETRAS[li++]; });
+
+    const adj = nodos.map(()=>[]);
+    pesos.forEach(e=>{ adj[e.a].push({to:e.b, w:e.w}); adj[e.b].push({to:e.a, w:e.w}); });
+    adj.forEach(l=>l.sort((p,q)=>nodos[p.to].name < nodos[q.to].name ? -1 : 1));
+
+    const t = nodos[T];
+    nodos.forEach(n=>{ n.h = Math.floor(2*Math.hypot(n.x-t.x, n.y-t.y)); });
+
+    const sx = 124, sy = 112, m = 50;
+    nodos.forEach(n=>{ n.px = m + n.x*sx; n.py = m + n.y*sy; });
+
+    E = {kind:"grafo", nodos, aristas:pesos, adj, w, S, T,
+         W: 2*m + (C-1)*sx, H: 2*m + (R-1)*sy + 36};
+  }
+
+  // sem y valores llegan desde la URL; sin ellos, el caso sale al azar
+  function generar(sem, valores){
+    detener();
+    semilla = Number.isInteger(sem) ? sem : 1 + Math.floor(Math.random()*999999);
+    estadoAzar = semilla;
+    if(tipo === "arbol") genArbol(valores); else genGrafo();
+    comp = {todo:{}, meta:{}};
+    reiniciar();
+  }
+
+  /* ---------- URL ---------- */
+  let qs = "", urlOk = true;
+
+  function leerURL(){
+    let q;
+    try{ q = new URLSearchParams(location.search || ""); }
+    catch(e){ return {}; }
+    const r = q.get("recorrido");
+    if(ALG[r]){ algo = r; tipo = ALG[r].tipo; }
+    let valores = null;
+    const a = q.get("arbol");
+    if(a && tipo === "arbol"){
+      const v = [];
+      a.split(",").forEach(s=>{
+        const x = parseInt(s.trim(), 10);
+        if(Number.isFinite(x) && x >= 0 && x <= 999 && !v.includes(x)) v.push(x);
+      });
+      if(v.length) valores = v.slice(0, 15);
+    }
+    buscarT = q.get("destino") === "1";
+    const n = parseInt(q.get("n"), 10), sem = parseInt(q.get("semilla"), 10);
+    return {caso:q.get("caso"), n: Number.isFinite(n) ? n : null,
+            sem: Number.isFinite(sem) ? sem : null, valores};
+  }
+
+  function escribirURL(){
+    const q = new URLSearchParams();
+    q.set("recorrido", algo);
+    q.set("caso", $("caso").value);
+    if(tipo === "arbol") q.set("arbol", E.valores.join(","));
+    else {
+      q.set("n", $("tam").value); q.set("semilla", semilla);
+      if(buscarT && algo !== "ast") q.set("destino", "1");
+    }
+    qs = q.toString().replace(/%2C/g, ",");
+    if(!urlOk) return;
+    try{
+      history.replaceState(null, "", location.pathname + "?" + qs);
+    }catch(e){
+      // contextos donde no se puede tocar la URL (iframe srcdoc, sandbox):
+      // seguimos funcionando, solo que el enlace hay que copiarlo a mano
+      urlOk = false;
+    }
+  }
+
+  /* =====================================================================
+     estado del recorrido
+     ===================================================================== */
+
+  // árboles: la secuencia de visitas se precalcula, junto con lo que
+  // hay en la pila de llamadas (o en la cola) después de cada visita
+  function secuenciaArbol(){
+    const seq = [], N = E.nodos;
+    if(algo === "niv"){
+      const q = [E.raiz];
+      while(q.length){
+        const id = q.shift();
+        if(N[id].izq >= 0) q.push(N[id].izq);
+        if(N[id].der >= 0) q.push(N[id].der);
+        seq.push({id, disp: q.map(x=>({id:x}))});
+      }
+      return {seq, disp0:[{id:E.raiz}]};
+    }
+    const pila = [];
+    const foto = () => {
+      pila[pila.length-1].est = "visita";
+      seq.push({id: pila[pila.length-1].id, disp: pila.map(f=>({...f}))});
+    };
+    (function rec(id){
+      if(id < 0) return;
+      pila.push({id, est:"entra"});
+      if(algo === "pre") foto();
+      pila[pila.length-1].est = "→izq";
+      rec(N[id].izq);
+      if(algo === "in") foto();
+      pila[pila.length-1].est = "→der";
+      rec(N[id].der);
+      if(algo === "post") foto();
+      pila.pop();
+    })(E.raiz);
+    return {seq, disp0:[{id:E.raiz, est:"entra"}]};
+  }
+
+  function reiniciar(){
+    detener();
+    err = 0; busy = false;
+    const N = E.nodos.length;
+    if(tipo === "grafo"){
+      st = {fr:[E.S], g:Array(N).fill(Infinity), padre:Array(N).fill(-1),
+            marcado:Array(N).fill(false), cerrado:Array(N).fill(false),
+            orden:[], ext:0, ins:0, fin:false, camino:null, ult:-1};
+      st.g[E.S] = 0;
+      if(algo === "bfs") st.marcado[E.S] = true;
+      lines = ["ini"];
+    } else {
+      st = secuenciaArbol();
+      st.k = 0; st.orden = []; st.max = 1; st.fin = false; st.ult = -1;
+      lines = [1];
+    }
+    escribirURL();
+    pintarCodigo();
+    render();
+    decir(INICIO[algo], "");
+    cota();
+  }
+
+  const INICIO = {
+    pre:  "Hacé clic en los nodos en el orden en que los visita el preorden: raíz, subárbol izquierdo, subárbol derecho.",
+    in:   "Hacé clic en los nodos en el orden en que los visita el inorden: subárbol izquierdo, raíz, subárbol derecho.",
+    post: "Hacé clic en los nodos en el orden en que los visita el postorden: subárbol izquierdo, subárbol derecho, raíz.",
+    niv:  "Hacé clic en los nodos nivel por nivel, de izquierda a derecha. La cola arranca con la raíz.",
+    bfs:  "La frontera arranca con <code>S</code>. Hacé clic en el nodo que sale de la cola.",
+    dfs:  "La frontera arranca con <code>S</code>. Hacé clic en el nodo que sale de la pila.",
+    dij:  "La frontera arranca con <code>S</code>, con g=0. Sacá siempre el de menor <code>g</code>: el costo acumulado desde S.",
+    ast:  "La frontera arranca con <code>S</code>. Sacá el de menor <code>f = g + h</code>, donde <code>h</code> estima lo que falta hasta T.",
+  };
+
+  /* =====================================================================
+     render
+     ===================================================================== */
+
+  function pintarCodigo(){
+    const rot = ROTULOS[algo] || [];
+    elCode.innerHTML = CODIGO[algo]
+      .map((t,k)=>({t, k, r:rot[k] || ""}))
+      .filter(x=>x.r !== "meta" || destino())
+      .map(x=>`<span class="ln" data-l="${x.k+1}" data-r="${x.r}">${x.t.replace(/</g,"&lt;")}</span>`)
+      .join("");
+  }
+
+  function marcarLinea(){
+    elCode.querySelectorAll(".ln").forEach(n=>{
+      n.classList.toggle("on", lines.includes(+n.dataset.l) || (n.dataset.r !== "" && lines.includes(n.dataset.r)));
+    });
+  }
+
+  function render(){
+    if(tipo === "grafo") dibujarGrafo(); else dibujarArbol();
+    dibujarFrontera();
+    dibujarVisitados();
+
+    if(tipo === "grafo"){
+      $("k1").textContent = "Extraídos";
+      $("k2").textContent = (algo === "dij" || algo === "ast") ? "Relajaciones" : "Inserciones";
+      $("s1").textContent = st.ext;
+      $("s2").textContent = st.ins;
+    } else {
+      $("k1").textContent = "Visitados";
+      $("k2").textContent = algo === "niv" ? "Cola máx." : "Pila máx.";
+      $("s1").textContent = st.k;
+      $("s2").textContent = st.max;
+    }
+    $("s3").textContent = err;
+    $("hastaF").style.display = tipo === "grafo" ? "" : "none";
+    $("hasta").value = destino() ? "meta" : "todo";
+    $("hasta").disabled = algo === "ast";   // sin destino no hay heurística
+    $("frChan").textContent = ALG[algo].fr;
+    $("visName").textContent = tipo === "grafo" ? "Extraídos" : "Visitados";
+    $("hint").innerHTML = tipo === "grafo"
+      ? `clic en un nodo de la frontera · <kbd>A</kbd>–<kbd>Z</kbd> elegir por nombre · <kbd>espacio</kbd> un paso automático`
+      : `clic en el próximo nodo a visitar · <kbd>espacio</kbd> un paso automático`;
+    marcarLinea();
+    dibujarComp();
+    $("paso").disabled = st.fin;
+    $("auto").disabled = st.fin;
+  }
+
+  function dibujarGrafo(){
+    const {nodos, aristas} = E;
+    const enFr = new Set(st.fr);
+    const enCamino = new Set();
+    if(st.camino) for(let k=1;k<st.camino.length;k++){
+      enCamino.add(st.camino[k-1]+","+st.camino[k]);
+      enCamino.add(st.camino[k]+","+st.camino[k-1]);
+    }
+    const ponderado = algo === "dij" || algo === "ast";
+
+    elBoard.setAttribute("viewBox", `0 0 ${E.W} ${E.H}`);
+    let s = "";
+    aristas.forEach(e=>{
+      const A = nodos[e.a], B = nodos[e.b];
+      const hijo = st.padre[e.b] === e.a ? e.b : st.padre[e.a] === e.b ? e.a : -1;
+      let cls = "edge";
+      if(enCamino.has(e.a+","+e.b)) cls += " path";
+      else if(hijo >= 0 && st.cerrado[hijo]) cls += " tree";
+      else if(hijo >= 0 && enFr.has(hijo)) cls += " tent";
+      s += `<line class="${cls}" x1="${A.px}" y1="${A.py}" x2="${B.px}" y2="${B.py}"/>`;
+    });
+    aristas.forEach(e=>{
+      const A = nodos[e.a], B = nodos[e.b];
+      const mx = (A.px+B.px)/2, my = (A.py+B.py)/2;
+      s += `<rect class="wbg" x="${mx-9}" y="${my-8}" width="18" height="16" rx="3"/>` +
+           `<text class="w${ponderado ? "" : " dim"}" x="${mx}" y="${my}">${e.w}</text>`;
+    });
+    nodos.forEach(n=>{
+      let cls = "node";
+      if(st.cerrado[n.id]) cls += " done";
+      else if(enFr.has(n.id)) cls += " fr";
+      if(n.id === st.ult) cls += " last";
+      if(st.fin) cls += " off";
+      s += `<g class="${cls}" data-id="${n.id}">`;
+      if(n.id === E.S || (n.id === E.T && destino())) s += `<circle class="ring" cx="${n.px}" cy="${n.py}" r="25"/>`;
+      s += `<circle class="base" cx="${n.px}" cy="${n.py}" r="19"/><circle class="dot" cx="${n.px}" cy="${n.py}" r="19"/>` +
+           `<text class="nm" x="${n.px}" y="${n.py}">${n.name}</text>`;
+      const g = st.g[n.id];
+      let sub = "";
+      if(algo === "dij") sub = isFinite(g) ? g : "∞";
+      else if(algo === "ast") sub = isFinite(g) ? `${g}+${n.h}` : `h=${n.h}`;
+      if(sub !== "") s += `<text class="gl" x="${n.px}" y="${n.py+33}">${sub}</text>`;
+      s += `</g>`;
+    });
+    elBoard.innerHTML = s;
+  }
+
+  function dispArbol(){
+    if(st.fin) return [];
+    return st.k === 0 ? st.disp0 : st.seq[st.k-1].disp;
+  }
+
+  function dibujarArbol(){
+    const N = E.nodos;
+    const vis = new Set(st.orden);
+    const enFr = new Set(dispArbol().map(f=>f.id));
+
+    elBoard.setAttribute("viewBox", `0 0 ${E.W} ${E.H}`);
+    let s = "";
+    N.forEach(n=>{
+      if(n.padre < 0) return;
+      const P = N[n.padre];
+      const cls = vis.has(n.id) && vis.has(P.id) ? "edge tree" : "edge";
+      s += `<line class="${cls}" x1="${P.px}" y1="${P.py}" x2="${n.px}" y2="${n.py}"/>`;
+    });
+    N.forEach(n=>{
+      let cls = "node";
+      if(vis.has(n.id)) cls += " done";
+      else if(enFr.has(n.id)) cls += " fr";
+      if(n.id === st.ult) cls += " last";
+      if(st.fin) cls += " off";
+      s += `<g class="${cls}" data-id="${n.id}">` +
+           `<circle class="base" cx="${n.px}" cy="${n.py}" r="19"/><circle class="dot" cx="${n.px}" cy="${n.py}" r="19"/>` +
+           `<text class="nm" x="${n.px}" y="${n.py}">${n.name}</text></g>`;
+    });
+    elBoard.innerHTML = s;
+  }
+
+  function subGrafo(id){
+    const g = st.g[id];
+    if(algo === "dij") return `g=${g}`;
+    if(algo === "ast") return `${g}+${E.nodos[id].h}=${g+E.nodos[id].h}`;
+    return "";
+  }
+
+  function tarjeta(clase, nombre, sub){
+    const d = document.createElement("div");
+    d.className = "card " + clase;
+    d.innerHTML = `<span>${nombre}</span>` + (sub ? `<span class="sub">${sub}</span>` : "");
+    return d;
+  }
+
+  function vacia(txt){
+    const d = document.createElement("div");
+    d.className = "card empty";
+    d.textContent = txt;
+    return d;
+  }
+
+  function dibujarFrontera(){
+    elFr.innerHTML = "";
+    const items = tipo === "grafo"
+      ? st.fr.map(id=>({id, sub:subGrafo(id)}))
+      : dispArbol().map(f=>({id:f.id, sub:f.est || ""}));
+    const elegible = !st.fin && (tipo === "grafo" || algo === "niv");
+
+    if(!items.length){
+      elFr.appendChild(vacia(ALG[algo].fr + " vacía"));
+      return;
+    }
+    items.forEach((it,idx)=>{
+      const d = tarjeta("r", E.nodos[it.id].name, it.sub);
+      d.dataset.id = it.id;
+      let marca = null;
+      if((algo === "bfs" || algo === "niv") && idx === 0) marca = "frente";
+      if((algo === "dfs" || ALG[algo].tipo === "arbol" && algo !== "niv") && idx === items.length-1) marca = "tope";
+      if(marca){
+        const p = document.createElement("span");
+        p.className = "ptr";
+        p.textContent = marca;
+        d.appendChild(p);
+      }
+      if(elegible){
+        d.classList.add("pick");
+        d.tabIndex = 0;
+        d.addEventListener("click", ()=>{ detener(); elegir(it.id); });
+        d.addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.stopPropagation(); detener(); elegir(it.id); } });
+      }
+      elFr.appendChild(d);
+    });
+  }
+
+  function dibujarVisitados(){
+    elVis.innerHTML = "";
+    if(!st.orden.length){ elVis.appendChild(vacia("Ninguno todavía")); return; }
+    st.orden.forEach(id=>{
+      const sub = (tipo === "grafo" && (algo === "dij" || algo === "ast")) ? `g=${st.g[id]}` : "";
+      elVis.appendChild(tarjeta("l", E.nodos[id].name, sub));
+    });
+  }
+
+  function dibujarComp(){
+    $("compPanel").style.display = tipo === "grafo" ? "" : "none";
+    if(tipo !== "grafo") return;
+    const modo = destino() ? "meta" : "todo";
+    const res = comp[modo];
+    const orden = ["bfs","dfs","dij","ast"].filter(a=>res[a]);
+    const cols = modo === "meta"
+      ? [["ext","Extraídos"],["aristas","Aristas"],["costo","Costo"]]
+      : [["prof","Prof. máx."],["suma","Σ costos"]];
+    const nota = modo === "meta"
+      ? `Aristas y costo del camino encontrado de S a T.`
+      : `Sobre el árbol que dejó cada recorrido: <b>Prof. máx.</b> es cuántas aristas separan a S del nodo más lejano; ` +
+        `<b>Σ costos</b> suma el costo acumulado del camino de S a cada nodo. A* no aparece: necesita un destino.`;
+    if(!orden.length){
+      $("comp").innerHTML = `<div class="hint">Corré varios recorridos sobre el mismo caso (cambiando el selector, sin tocar <b>Nuevo caso</b>) y comparalos acá.</div>`;
+      return;
+    }
+    const mejor = {};
+    cols.forEach(([k])=>{ mejor[k] = Math.min(...orden.map(a=>res[a][k])); });
+    let h = `<table class="comp"><tr><th>Recorrido</th>${cols.map(([,t])=>`<th>${t}</th>`).join("")}</tr>`;
+    orden.forEach(a=>{
+      h += `<tr class="${a===algo?"cur":""}"><td>${ALG[a].nombre}</td>` +
+           cols.map(([k])=>`<td class="${res[a][k]===mejor[k]?"best":""}">${res[a][k]}</td>`).join("") + `</tr>`;
+    });
+    h += `</table><div class="hint">${nota}</div>`;
+    $("comp").innerHTML = h;
+  }
+
+  /* ---------- mensajes ---------- */
+  function decir(txt, tipoMsg){
+    elMsg.className = "msg" + (tipoMsg ? " "+tipoMsg : "");
+    elMsg.innerHTML = `<span>${txt}</span>`;
+  }
+
+  function cota(){
+    let t;
+    if(tipo === "arbol"){
+      const n = E.nodos.length;
+      t = `Con n=${n} nodos y altura ${E.alto}: la pila de llamadas llega a lo sumo a <b>${E.alto+1}</b> marcos ` +
+          `(la altura más uno); la cola por niveles, al nivel más ancho (<b>${E.ancho}</b>). ` +
+          `Los cuatro recorridos visitan cada nodo una sola vez: O(n).`;
+    } else {
+      const N = E.nodos.length, M = E.aristas.length;
+      const base = `${N} nodos y ${M} aristas. `;
+      t = base + (destino() ? {
+        bfs: `BFS ignora los pesos: encuentra el camino con menos aristas, que no tiene por qué ser el más barato.`,
+        dfs: `DFS también ignora los pesos, y ni siquiera busca el camino más corto: se mete hasta el fondo antes de retroceder.`,
+        dij: `Dijkstra extrae los nodos en orden creciente de costo acumulado <code>g</code>. Cuando extrae T, su g es el costo mínimo. Supone pesos no negativos.`,
+        ast: `h(v) = 2 × distancia en línea recta a T, redondeada hacia abajo. Cada arista pesa al menos 2 × su largo, así que h nunca sobreestima: es admisible y A* encuentra el camino óptimo.`,
+      } : {
+        bfs: `BFS ignora los pesos y descubre el grafo por capas: primero los vecinos de S, después los vecinos de esos, y así. Cada nodo y cada arista se procesan una vez: O(V + E).`,
+        dfs: `DFS ignora los pesos y se mete hasta el fondo antes de retroceder. También es O(V + E); lo que cambia respecto de BFS es la forma del árbol que deja.`,
+        dij: `Dijkstra extrae los nodos en orden creciente de costo acumulado <code>g</code>. Al terminar, el g de cada nodo es su costo mínimo desde S. Supone pesos no negativos.`,
+      })[algo];
+    }
+    $("cota").innerHTML = t;
+  }
+
+  /* =====================================================================
+     lógica del paso — grafos
+     ===================================================================== */
+
+  function clave(id){
+    return algo === "ast" ? st.g[id] + E.nodos[id].h : st.g[id];
+  }
+
+  function candidatos(){
+    if(algo === "bfs") return [st.fr[0]];
+    if(algo === "dfs") return [st.fr[st.fr.length-1]];
+    const m = Math.min(...st.fr.map(clave));
+    return st.fr.filter(id=>clave(id) === m);
+  }
+
+  const lista = ids => ids.map(v=>`<code>${E.nodos[v].name}</code>`).join(", ");
+
+  function razonGrafo(id){
+    const nm = `<code>${E.nodos[id].name}</code>`;
+    if(st.cerrado[id]) return `${nm} ya salió de la frontera. Cada nodo se extrae una sola vez.`;
+    if(!st.fr.includes(id)) return `${nm} todavía no está en la frontera. Solo podés extraer nodos de la frontera (en celeste).`;
+    switch(algo){
+      case "bfs": return `${nm} está en la cola, pero no al frente. Una cola saca primero lo que entró primero.`;
+      case "dfs": return `${nm} está en la pila, pero no en el tope. Una pila saca primero lo último que entró.`;
+      case "dij": return `${nm} tiene g=${st.g[id]}, pero en la frontera hay uno con g menor. Dijkstra saca siempre el de menor costo acumulado.`;
+      case "ast": {
+        const mg = Math.min(...st.fr.map(v=>st.g[v]));
+        if(st.g[id] === mg)
+          return `${nm} es el de menor g: eso haría Dijkstra. A* ordena por f = g + h, que suma lo recorrido y lo que se estima que falta.`;
+        const n = E.nodos[id];
+        return `${nm} tiene f = ${st.g[id]} + ${n.h} = ${st.g[id]+n.h}, pero en la frontera hay uno con f menor.`;
+      }
+    }
+  }
+
+  function elegir(id){
+    if(tipo === "arbol"){ elegirArbol(id); return; }
+    if(busy || st.fin) return;
+    if(!candidatos().includes(id)){
+      err++;
+      decir(razonGrafo(id), "err");
+      render();
+      sacudir(id);
+      return;
+    }
+    const desde = rectNodo(id);
+    extraer(id);
+    render();
+    volar(desde);
+  }
+
+  function extraer(u){
+    const nu = E.nodos[u];
+    st.fr.splice(st.fr.indexOf(u), 1);
+    st.cerrado[u] = true;
+    st.marcado[u] = true;
+    st.orden.push(u);
+    st.ext++;
+    st.ult = u;
+
+    const pal = {bfs:"Desencolaste", dfs:"Desapilaste", dij:"Extrajiste", ast:"Extrajiste"}[algo];
+    let txt = `${pal} <code>${nu.name}</code>`;
+    if(algo === "dij") txt += ` con g=${st.g[u]}`;
+    if(algo === "ast") txt += ` con f = ${st.g[u]} + ${nu.h} = ${st.g[u]+nu.h}`;
+
+    if(u === E.T && destino()){ terminarGrafo(); return; }
+
+    const nuevos = [], suben = [], apilados = [], mejoras = [];
+    E.adj[u].forEach(({to:v, w})=>{
+      if(algo === "bfs"){
+        if(st.marcado[v]) return;
+        st.marcado[v] = true; st.padre[v] = u; st.g[v] = st.g[u] + w;
+        st.fr.push(v); nuevos.push(v); st.ins++;
+      } else if(algo === "dfs"){
+        if(st.cerrado[v]) return;
+        const k = st.fr.indexOf(v);
+        if(k >= 0){ st.fr.splice(k,1); suben.push(v); } else nuevos.push(v);
+        st.padre[v] = u; st.g[v] = st.g[u] + w;
+        st.fr.push(v); apilados.push(v); st.ins++;
+      } else {
+        if(st.cerrado[v] || st.g[u] + w >= st.g[v]) return;
+        const antes = st.g[v];
+        st.g[v] = st.g[u] + w; st.padre[v] = u; st.ins++;
+        if(st.fr.includes(v)) mejoras.push([v, antes]);
+        else { st.fr.push(v); nuevos.push(v); }
+      }
+    });
+
+    const hubo = nuevos.length + suben.length + mejoras.length > 0;
+    lines = hubo ? ["ext","ins"] : ["ext","if"];
+
+    if(algo === "bfs"){
+      txt += nuevos.length ? ` y encolaste sus vecinos sin marcar: ${lista(nuevos)}.`
+                           : `. No tiene vecinos sin marcar: no entra nadie.`;
+    } else if(algo === "dfs"){
+      txt += apilados.length ? ` y apilaste ${lista(apilados)}, en ese orden.` : `. No le quedan vecinos sin marcar.`;
+      if(suben.length) txt += ` ${lista(suben)} ya ${suben.length>1?"estaban":"estaba"} en la pila: ${suben.length>1?"suben":"sube"} al tope con su nuevo padre.`;
+    } else {
+      txt += `: es definitivo, su g ya no puede bajar.`;
+      if(nuevos.length) txt += ` Entran ${nuevos.map(v=>`<code>${E.nodos[v].name}</code> (g=${st.g[v]})`).join(", ")}.`;
+      if(mejoras.length) txt += ` ${mejoras.length>1?"Mejoran":"Mejora"} ${mejoras.map(([v,a])=>`<code>${E.nodos[v].name}</code> (${a} → ${st.g[v]})`).join(", ")}.`;
+      if(!hubo) txt += ` Ningún vecino mejora.`;
+    }
+    if(!st.fr.length){ terminarTodo(); return; }
+    decir(txt, "good");
+  }
+
+  // sin destino: la frontera se vació y queda el árbol del recorrido
+  function terminarTodo(){
+    st.fin = true;
+    lines = ["loop"];
+    let prof = 0, suma = 0;
+    E.nodos.forEach(n=>{
+      if(!st.cerrado[n.id]) return;
+      let h = 0;
+      for(let v=n.id; st.padre[v]>=0; v=st.padre[v]) h++;
+      prof = Math.max(prof, h);
+      suma += st.g[n.id];
+    });
+    comp.todo[algo] = {prof, suma};
+
+    const cierre = {
+      bfs: `Las aristas amarillas forman el árbol BFS: cada nodo cuelga del que lo descubrió, y queda a la menor cantidad de aristas posible de S.`,
+      dfs: `Las aristas amarillas forman el árbol DFS: ramas largas, porque cada nodo cuelga del último que lo alcanzó.`,
+      dij: `Las aristas amarillas forman el árbol de caminos mínimos: el g de cada nodo es su costo mínimo desde S.`,
+    }[algo];
+    decir(`La frontera se vació: recorriste los ${st.ext} nodos alcanzables desde <code>S</code>` +
+          (err ? `, con ${err} ${err===1?"error":"errores"}` : "") + `. ${cierre}`, "good");
+  }
+
+  function terminarGrafo(){
+    st.fin = true;
+    lines = ["ext","meta"];
+    const cam = [];
+    for(let v=E.T; v>=0; v=st.padre[v]) cam.unshift(v);
+    st.camino = cam;
+    let costo = 0;
+    for(let k=1;k<cam.length;k++) costo += E.w.get(cam[k-1]+","+cam[k]);
+    const aristas = cam.length - 1;
+    comp.meta[algo] = {ext:st.ext, aristas, costo};
+
+    const cierre = {
+      bfs: `BFS garantiza el mínimo número de aristas, no el mínimo costo.`,
+      dfs: `DFS no garantiza nada sobre el camino: encuentra uno.`,
+      dij: `Con pesos no negativos, Dijkstra garantiza el costo mínimo.`,
+      ast: `Con una heurística admisible, A* también garantiza el costo mínimo, y en general extrae menos nodos que Dijkstra.`,
+    }[algo];
+    decir(`Llegaste a <code>T</code>. Camino ${cam.map(v=>E.nodos[v].name).join(" → ")}: ` +
+          `${aristas} aristas, costo ${costo}. Extrajiste ${st.ext} de ${E.nodos.length} nodos` +
+          (err ? `, con ${err} ${err===1?"error":"errores"}` : "") + `. ${cierre}`, "good");
+  }
+
+  /* =====================================================================
+     lógica del paso — árboles
+     ===================================================================== */
+
+  function ancestros(id){
+    const r = [];
+    for(let p=E.nodos[id].padre; p>=0; p=E.nodos[p].padre) r.push(p);
+    return r;
+  }
+  function descendientes(id){
+    const r = [];
+    (function d(x){ if(x<0) return; r.push(x); d(E.nodos[x].izq); d(E.nodos[x].der); })(id);
+    return r.slice(1);
+  }
+
+  function razonArbol(id){
+    const vis = new Set(st.orden), n = E.nodos[id];
+    const nm = `<code>${n.name}</code>`;
+    if(vis.has(id)) return `${nm} ya fue visitado.`;
+    const falta = x => !vis.has(x);
+    switch(algo){
+      case "pre":
+        if(n.padre >= 0 && falta(n.padre))
+          return `En preorden un nodo va antes que sus descendientes, y su padre <code>${E.nodos[n.padre].name}</code> todavía no fue visitado.`;
+        return `Antes de ${nm} hay que terminar el subárbol izquierdo que quedó pendiente.`;
+      case "in": {
+        const izq = n.izq >= 0 ? [n.izq].concat(descendientes(n.izq)) : [];
+        if(izq.some(falta)) return `En inorden, antes de ${nm} va todo su subárbol izquierdo.`;
+        return `Hay un valor menor que ${nm} sin visitar. En un BST, el inorden sale en orden creciente.`;
+      }
+      case "post":
+        if(descendientes(id).some(falta))
+          return `En postorden un nodo va después de todos sus descendientes, y a ${nm} todavía le quedan.`;
+        return `Antes de ${nm} hay que terminar el subárbol que quedó pendiente a la izquierda.`;
+      case "niv": {
+        const minProf = Math.min(...E.nodos.filter(x=>falta(x.id)).map(x=>x.prof));
+        if(minProf < n.prof)
+          return `Todavía quedan nodos del nivel ${minProf} sin visitar. Por niveles se baja recién cuando se termina el nivel anterior.`;
+        return `Dentro de un nivel se va de izquierda a derecha: es el orden en que entraron a la cola.`;
+      }
+    }
+  }
+
+  function elegirArbol(id){
+    if(busy || st.fin) return;
+    if(id !== st.seq[st.k].id){
+      err++;
+      decir(razonArbol(id), "err");
+      render();
+      sacudir(id);
+      return;
+    }
+    const desde = rectNodo(id);
+    const n = E.nodos[id];
+    st.orden.push(id);
+    st.k++;
+    st.ult = id;
+    st.max = Math.max(st.max, st.seq[st.k-1].disp.length);
+    lines = LINEA_VISITA[algo];
+    if(st.k === st.seq.length) st.fin = true;
+
+    const nm = `<code>${n.name}</code>`;
+    let txt;
+    if(algo === "pre") txt = `Visitaste ${nm} apenas entraste a su llamada, antes que a sus hijos.`;
+    else if(algo === "in") txt = `Visitaste ${nm}: su subárbol izquierdo ya está terminado; sigue el derecho.`;
+    else if(algo === "post") txt = `Visitaste ${nm}: sus dos subárboles ya están terminados.`;
+    else {
+      const hijos = [n.izq, n.der].filter(x=>x>=0);
+      txt = `Desencolaste ${nm}` + (hijos.length ? ` y encolaste sus hijos: ${lista(hijos)}.` : `. Es una hoja: no encola nada.`);
+    }
+
+    if(st.fin){
+      lines = [];
+      const cierre = {
+        pre:  `Si insertás en un BST vacío en este orden, obtenés exactamente el mismo árbol.`,
+        in:   `Fijate: en un BST, el inorden sale ordenado.`,
+        post: `Es el orden en que liberarías la memoria: cada nodo después de sus hijos.`,
+        niv:  `La cola llegó a ${st.max}: depende del ancho del árbol. La pila de los recorridos recursivos depende de la altura.`,
+      }[algo];
+      txt = `Terminaste. Visitaste los ${E.nodos.length} nodos` +
+            (err ? `, con ${err} ${err===1?"error":"errores"}` : "") + `. ${cierre}`;
+    }
+    render();
+    volar(desde);
+    decir(txt, "good");
+  }
+
+  /* =====================================================================
+     animación
+     ===================================================================== */
+
+  function rectNodo(id){
+    const c = elBoard.querySelector(`g[data-id="${id}"] .dot`);
+    return c ? c.getBoundingClientRect() : null;
+  }
+
+  function volar(desde){
+    if(reduce || !desde) return;
+    const llegada = elVis.lastElementChild;
+    if(!llegada) return;
+    const hasta = llegada.getBoundingClientRect();
+    const clon = llegada.cloneNode(true);
+    clon.classList.add("flying");
+    const x0 = desde.left + desde.width/2 - 28, y0 = desde.top + desde.height/2 - 30;
+    clon.style.left = x0 + "px";
+    clon.style.top = y0 + "px";
+    document.body.appendChild(clon);
+    llegada.style.opacity = "0";
+    busy = true;
+    requestAnimationFrame(()=>{
+      clon.style.transition = "transform .34s cubic-bezier(.4,0,.2,1)";
+      clon.style.transform = `translate(${hasta.left-x0}px, ${hasta.top-y0}px)`;
+    });
+    setTimeout(()=>{
+      clon.remove();
+      llegada.style.opacity = "";
+      busy = false;
+    }, 360);
+  }
+
+  function sacudir(id){
+    const nodos = [elBoard.querySelector(`g[data-id="${id}"]`), elFr.querySelector(`[data-id="${id}"]`)];
+    nodos.forEach(n=>{
+      if(!n) return;
+      n.classList.add("shake","bad");
+      setTimeout(()=>n.classList.remove("shake","bad"), 600);
+    });
+  }
+
+  /* =====================================================================
+     automático
+     ===================================================================== */
+
+  function unPaso(){
+    if(st.fin || busy) return;
+    if(tipo === "grafo") elegir(candidatos()[0]);
+    else elegirArbol(st.seq[st.k].id);
+  }
+
+  function detener(){
+    if(playing){ clearInterval(playing); playing = null; }
+    $("auto").textContent = "Ejecutar";
+  }
+
+  $("auto").addEventListener("click", ()=>{
+    if(playing){ detener(); return; }
+    $("auto").textContent = "Pausar";
+    playing = setInterval(()=>{
+      if(st.fin){ detener(); return; }
+      unPaso();
+    }, 750);
+  });
+
+  /* =====================================================================
+     entrada
+     ===================================================================== */
+
+  function configurarTipo(){
+    const cfg = TAM[tipo];
+    $("caso").innerHTML = CASOS[tipo].map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
+    $("tamL").textContent = cfg.label;
+    $("tam").min = cfg.min; $("tam").max = cfg.max;
+    $("tam").value = tamGuardado[tipo];
+    $("tamV").textContent = tamGuardado[tipo];
+  }
+
+  elBoard.addEventListener("click", e=>{
+    const g = e.target.closest("g[data-id]");
+    if(!g) return;
+    detener();
+    elegir(+g.dataset.id);
+  });
+
+  $("algo").addEventListener("change", e=>{
+    algo = e.target.value;
+    const t = ALG[algo].tipo;
+    if(t !== tipo){ tipo = t; configurarTipo(); generar(); }
+    else reiniciar();
+  });
+  $("caso").addEventListener("change", ()=>generar());
+  $("hasta").addEventListener("change", e=>{
+    buscarT = e.target.value === "meta";
+    reiniciar();
+  });
+  $("tam").addEventListener("input", e=>{
+    tamGuardado[tipo] = +e.target.value;
+    $("tamV").textContent = e.target.value;
+    generar();
+  });
+  $("nuevo").addEventListener("click", ()=>generar());
+  $("reini").addEventListener("click", reiniciar);
+  $("paso").addEventListener("click", ()=>{ detener(); unPaso(); });
+  $("link").addEventListener("click", ()=>{
+    const texto = urlOk ? location.href : "?"+qs;
+    const listo = ()=>{
+      $("link").textContent = "Copiado";
+      setTimeout(()=>$("link").textContent = "Copiar enlace", 1400);
+      if(!urlOk) decir(`Copié solo los parámetros: <code>?${qs}</code> — pegalos al final de la URL donde tengas la página.`, "warn");
+    };
+    const noPude = ()=>decir(`No pude copiar solo. Los parámetros de este caso son: <code>?${qs}</code>`, "warn");
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(texto).then(listo, noPude);
+      else noPude();
+    }catch(e){ noPude(); }
+  });
+
+  document.addEventListener("keydown", e=>{
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag === "SELECT" || tag === "INPUT") return;
+    if(e.key === " "){ e.preventDefault(); detener(); unPaso(); }
+    else if(e.key === "Enter" && document.activeElement === document.body){ generar(); }
+    else if(tipo === "grafo" && /^[a-z]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey){
+      const n = E.nodos.find(x=>x.name === e.key.toUpperCase());
+      if(n){ detener(); elegir(n.id); }
+    }
+  });
+
+  /* ---------- arranque ---------- */
+  const ini = leerURL();
+  $("algo").value = algo;
+  if(Number.isFinite(ini.n)) tamGuardado.grafo = Math.min(TAM.grafo.max, Math.max(TAM.grafo.min, ini.n));
+  if(ini.valores) tamGuardado.arbol = Math.min(TAM.arbol.max, Math.max(TAM.arbol.min, ini.valores.length));
+  configurarTipo();
+  if(CASOS[tipo].some(([v])=>v === ini.caso)) $("caso").value = ini.caso;
+  if(ini.valores) $("tamV").textContent = ini.valores.length;
+  generar(ini.sem, ini.valores);
+})();
+</script>
+</body>
+</html>
